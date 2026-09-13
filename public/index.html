@@ -111,12 +111,12 @@
 <div class="panel">
   <form id="discoverForm" class="row">
     <div>
-      <label for="query">Search (category + area)</label>
-      <input id="query" placeholder="hardware shops in Mbarara" required />
+      <label for="category">Business category</label>
+      <input id="category" placeholder="hardware shops" required />
     </div>
     <div>
-      <label for="area">Area tag</label>
-      <input id="area" placeholder="Mbarara" />
+      <label for="area">Area</label>
+      <input id="area" placeholder="Mbarara" required />
     </div>
     <button type="submit" id="discoverBtn">Find leads</button>
   </form>
@@ -220,20 +220,19 @@ document.getElementById('discoverForm').addEventListener('submit', async (e) => 
   e.preventDefault();
   const btn = document.getElementById('discoverBtn');
   const result = document.getElementById('discoverResult');
-  const query = document.getElementById('query').value.trim();
+  const category = document.getElementById('category').value.trim();
   const area = document.getElementById('area').value.trim();
 
   btn.disabled = true;
   result.textContent = 'Searching...';
 
   try {
-    const params = new URLSearchParams({ query });
-    if (area) params.set('area', area);
+    const params = new URLSearchParams({ category, area });
     const res = await fetch(`/.netlify/functions/discover-leads?${params}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    result.textContent = `Found ${data.totalFound}, ${data.noWebsite} had no website, ${data.newlySaved} newly saved.`;
+    result.textContent = `Searched "${data.searchQuery}" — found ${data.totalFound}, ${data.noWebsite} had no website, ${data.newlySaved} newly saved.`;
     await loadStats();
     await loadLeads();
   } catch (err) {

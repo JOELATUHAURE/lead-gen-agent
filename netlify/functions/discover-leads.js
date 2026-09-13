@@ -1,21 +1,23 @@
 // Netlify Function: search Google Places for a category+area, keep only
 // businesses with no website, and save new ones into Supabase.
 //
-// GET /.netlify/functions/discover-leads?query=hardware%20shops%20in%20Mbarara&area=Mbarara
+// GET /.netlify/functions/discover-leads?category=hotels&area=Mbarara
 
 const { searchPlaces, filterNoWebsite } = require("../../src/places");
 const { placesToLeadRows, upsertLeads } = require("../../src/leads");
 const { getServiceClient } = require("../../src/supabaseClient");
 
 exports.handler = async (event) => {
-  const query = event.queryStringParameters?.query;
+  const category = event.queryStringParameters?.category;
   const area = event.queryStringParameters?.area;
   const defaultCountry = process.env.DEFAULT_COUNTRY || "UG";
 
-  if (!query) {
+  if (!category || !area) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: "Missing required 'query' parameter." }),
+      body: JSON.stringify({
+        error: "Both 'category' and 'area' parameters are required.",
+      }),
     };
   }
 
@@ -27,11 +29,16 @@ exports.handler = async (event) => {
     };
   }
 
+  // Always search with category + area combined -- Google has no separate
+  // "location" field on this endpoint, so the area MUST be part of the
+  // search text itself or results aren't scoped to it at all.
+  const searchQuery = `${category} in ${area}`;
+
   try {
-    const places = await searchPlaces(query, apiKey);
+    const places = await searchPlaces(searchQuery, apiKey);
     const noWebsite = filterNoWebsite(places);
     const rows = placesToLeadRows(noWebsite, {
-      categoryQuery: query,
+      categoryQuery: category,
       area,
       defaultCountry,
     });
@@ -42,7 +49,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       body: JSON.stringify({
-        query,
+        searchQuery,
         totalFound: places.length,
         noWebsite: noWebsite.length,
         newlySaved: saved.length,
