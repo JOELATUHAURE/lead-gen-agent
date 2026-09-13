@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>lead-gen-agent</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f8;
+    --panel: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #2563eb;
+    --accent-text: #ffffff;
+    --danger: #dc2626;
+    --ok: #16a34a;
+    --warn: #d97706;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --panel: #1e2126;
+      --text: #e7e7ea;
+      --muted: #9aa0a8;
+      --border: #2c2f36;
+      --accent: #3b82f6;
+      --accent-text: #ffffff;
+      --danger: #f87171;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 20px;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-size: 14px;
+    min-width: 200px;
+  }
+  button {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 6px;
+    padding: 9px 16px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .stats { display: flex; gap: 20px; flex-wrap: wrap; }
+  .stat { min-width: 90px; }
+  .stat .n { font-size: 22px; font-weight: 600; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge.pending { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+  .badge.sent { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .badge.failed, .badge.skipped { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+  #discoverResult, #sendResult { margin-top: 10px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+  .table-wrap { overflow-x: auto; }
+  .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>lead-gen-agent</h1>
+<div class="sub">Find no-website businesses on Google, review them, send WhatsApp outreach.</div>
+
+<div class="panel">
+  <div class="stats" id="stats">
+    <div class="stat"><div class="n">–</div><div class="l">Total</div></div>
+  </div>
+</div>
+
+<div class="panel">
+  <form id="discoverForm" class="row">
+    <div>
+      <label for="query">Search (category + area)</label>
+      <input id="query" placeholder="hardware shops in Mbarara" required />
+    </div>
+    <div>
+      <label for="area">Area tag</label>
+      <input id="area" placeholder="Mbarara" />
+    </div>
+    <button type="submit" id="discoverBtn">Find leads</button>
+  </form>
+  <div id="discoverResult"></div>
+</div>
+
+<div class="panel">
+  <div class="row" style="justify-content: space-between; margin-bottom: 14px;">
+    <div>
+      <label for="limit">Send to how many pending leads?</label>
+      <input id="limit" type="number" value="5" min="1" max="50" style="min-width: 80px;" />
+    </div>
+    <button type="button" id="sendBtn" class="secondary">Send WhatsApp batch</button>
+  </div>
+  <div id="sendResult"></div>
+</div>
+
+<div class="panel">
+  <div class="row" style="justify-content: space-between; margin-bottom: 10px;">
+    <strong>Leads</strong>
+    <button type="button" id="refreshBtn" class="secondary">Refresh</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Business</th>
+          <th>Phone</th>
+          <th>Area</th>
+          <th>WhatsApp</th>
+          <th>Message</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody id="leadsBody"></tbody>
+    </table>
+    <div class="empty" id="emptyState" hidden>No leads yet — run a search above.</div>
+  </div>
+</div>
+
+<script>
+async function loadStats() {
+  try {
+    const res = await fetch('/.netlify/functions/lead-stats');
+    const s = await res.json();
+    if (s.error) throw new Error(s.error);
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="n">${s.total}</div><div class="l">Total</div></div>
+      <div class="stat"><div class="n">${s.pending}</div><div class="l">Pending</div></div>
+      <div class="stat"><div class="n">${s.sent}</div><div class="l">Sent</div></div>
+      <div class="stat"><div class="n">${s.failed}</div><div class="l">Failed</div></div>
+      <div class="stat"><div class="n">${s.skipped}</div><div class="l">Not on WhatsApp</div></div>
+    `;
+  } catch (e) {
+    document.getElementById('stats').innerHTML = `<span style="color:var(--danger)">Stats error: ${e.message}</span>`;
+  }
+}
+
+function badge(text) {
+  const cls = (text || '').toLowerCase();
+  return `<span class="badge ${cls}">${text}</span>`;
+}
+
+async function loadLeads() {
+  const tbody = document.getElementById('leadsBody');
+  const empty = document.getElementById('emptyState');
+  try {
+    const res = await fetch('/.netlify/functions/list-leads?limit=100');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    if (!data.leads.length) {
+      tbody.innerHTML = '';
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    tbody.innerHTML = data.leads.map(l => `
+      <tr>
+        <td>${escapeHtml(l.business_name || '(no name)')}</td>
+        <td>${escapeHtml(l.phone_e164 || '—')}</td>
+        <td>${escapeHtml(l.area || '—')}</td>
+        <td>${badge(l.whatsapp_status)}</td>
+        <td>${badge(l.message_status)}</td>
+        <td style="max-width:220px; color:var(--muted); font-size:12px;">${escapeHtml(l.message_error || '')}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger)">Error loading leads: ${escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+document.getElementById('discoverForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('discoverBtn');
+  const result = document.getElementById('discoverResult');
+  const query = document.getElementById('query').value.trim();
+  const area = document.getElementById('area').value.trim();
+
+  btn.disabled = true;
+  result.textContent = 'Searching...';
+
+  try {
+    const params = new URLSearchParams({ query });
+    if (area) params.set('area', area);
+    const res = await fetch(`/.netlify/functions/discover-leads?${params}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    result.textContent = `Found ${data.totalFound}, ${data.noWebsite} had no website, ${data.newlySaved} newly saved.`;
+    await loadStats();
+    await loadLeads();
+  } catch (err) {
+    result.textContent = `Error: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('sendBtn').addEventListener('click', async () => {
+  const limit = document.getElementById('limit').value || 5;
+  const result = document.getElementById('sendResult');
+
+  const ok = confirm(
+    `This will send a real WhatsApp message to up to ${limit} pending lead(s). Continue?`
+  );
+  if (!ok) return;
+
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  result.textContent = 'Sending...';
+
+  try {
+    const res = await fetch(`/.netlify/functions/send-whatsapp?limit=${encodeURIComponent(limit)}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    result.textContent = `Processed ${data.processed}: ` + JSON.stringify(data.results, null, 2);
+    await loadStats();
+    await loadLeads();
+  } catch (err) {
+    result.textContent = `Error: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  loadStats();
+  loadLeads();
+});
+
+loadStats();
+loadLeads();
+</script>
+
+</body>
+</html>
