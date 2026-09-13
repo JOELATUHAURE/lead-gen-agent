@@ -58,11 +58,11 @@ function saveCsv(query, places) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const area = args.length > 1 ? args[args.length - 1] : undefined;
-  const query = (area ? args.slice(0, -1) : args).join(" ") || args.join(" ");
+  // Two shell args expected: the search phrase, then an optional area tag,
+  // e.g. node find-leads.js "hardware shops in Mbarara" Mbarara
+  const [query, area] = process.argv.slice(2);
 
-  if (!process.argv.slice(2).join(" ")) {
+  if (!query) {
     console.error(
       'Usage: node find-leads.js "hardware shops in Mbarara" [area]'
     );
@@ -76,7 +76,7 @@ async function main() {
     process.exit(1);
   }
 
-  const fullQuery = process.argv.slice(2).join(" ");
+  const fullQuery = query;
   console.log(`Searching: "${fullQuery}"...`);
 
   const places = await searchPlaces(fullQuery, API_KEY);
