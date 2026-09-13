@@ -1,58 +1,18 @@
 // Find business leads using the Google Places API (New) Text Search endpoint.
-// Usage: node find-leads.js "hardware shops in Mbarara"
+// Saves all results to a local CSV, and (if Supabase env vars are set)
+// upserts the no-website ones into the `leads` table for the WhatsApp pipeline.
+//
+// Usage: node find-leads.js "hardware shops in Mbarara" [area]
 
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 
+const { searchPlaces, filterNoWebsite } = require("./src/places");
+const { placesToLeadRows, upsertLeads } = require("./src/leads");
+const { getServiceClient } = require("./src/supabaseClient");
+
 const API_KEY = process.env.GOOGLE_PLACES_API_KEY;
-const ENDPOINT = "https://places.googleapis.com/v1/places:searchText";
-
-const FIELD_MASK = [
-  "places.id",
-  "places.displayName",
-  "places.formattedAddress",
-  "places.nationalPhoneNumber",
-  "places.internationalPhoneNumber",
-  "places.websiteUri",
-  "places.rating",
-  "places.userRatingCount",
-  "places.businessStatus",
-].join(",");
-
-async function searchPlaces(query) {
-  const results = [];
-  let pageToken;
-
-  do {
-    const body = { textQuery: query };
-    if (pageToken) body.pageToken = pageToken;
-
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": API_KEY,
-        "X-Goog-FieldMask": FIELD_MASK,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Places API error ${res.status}: ${errText}`);
-    }
-
-    const data = await res.json();
-    results.push(...(data.places || []));
-    pageToken = data.nextPageToken;
-
-    // Google requires a short delay before a page token becomes valid.
-    if (pageToken) await new Promise((r) => setTimeout(r, 2000));
-  } while (pageToken && results.length < 60);
-
-  return results;
-}
 
 function toCsvRow(values) {
   return values
@@ -98,10 +58,14 @@ function saveCsv(query, places) {
 }
 
 async function main() {
-  const query = process.argv.slice(2).join(" ");
+  const args = process.argv.slice(2);
+  const area = args.length > 1 ? args[args.length - 1] : undefined;
+  const query = (area ? args.slice(0, -1) : args).join(" ") || args.join(" ");
 
-  if (!query) {
-    console.error('Usage: node find-leads.js "hardware shops in Mbarara"');
+  if (!process.argv.slice(2).join(" ")) {
+    console.error(
+      'Usage: node find-leads.js "hardware shops in Mbarara" [area]'
+    );
     process.exit(1);
   }
 
@@ -112,9 +76,10 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Searching: "${query}"...`);
+  const fullQuery = process.argv.slice(2).join(" ");
+  console.log(`Searching: "${fullQuery}"...`);
 
-  const places = await searchPlaces(query);
+  const places = await searchPlaces(fullQuery, API_KEY);
 
   if (places.length === 0) {
     console.log("No results found.");
@@ -133,8 +98,26 @@ async function main() {
     console.log("");
   }
 
-  const filePath = saveCsv(query, places);
-  console.log(`Saved results to ${filePath}`);
+  const filePath = saveCsv(fullQuery, places);
+  console.log(`Saved all results to ${filePath}`);
+
+  const noWebsite = filterNoWebsite(places);
+  console.log(`\n${noWebsite.length} of ${places.length} have no website listed.`);
+
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const rows = placesToLeadRows(noWebsite, {
+      categoryQuery: fullQuery,
+      area,
+      defaultCountry: process.env.DEFAULT_COUNTRY || "UG",
+    });
+    const supabase = getServiceClient();
+    const saved = await upsertLeads(supabase, rows);
+    console.log(`Saved ${saved.length} new no-website leads to Supabase.`);
+  } else {
+    console.log(
+      "(Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env to also save no-website leads to Supabase.)"
+    );
+  }
 }
 
 main().catch((err) => {
