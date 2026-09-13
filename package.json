@@ -1,0 +1,13 @@
+{
+  "name": "lead-gen-agent",
+  "version": "1.0.0",
+  "description": "Find business leads via Google Places API",
+  "main": "find-leads.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node find-leads.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
